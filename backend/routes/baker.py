@@ -4,6 +4,7 @@ from db.database import get_connection
 
 router = APIRouter()
 
+
 class BakerProfile(BaseModel):
     user_id: int
     shop_name: str
@@ -11,7 +12,7 @@ class BakerProfile(BaseModel):
     address: str
 
 
-@router.post("/create")
+@router.post("/create-profile")
 def create_baker(profile: BakerProfile):
     conn = get_connection()
     cur = conn.cursor()
@@ -31,4 +32,7 @@ def create_baker(profile: BakerProfile):
     cur.close()
     conn.close()
 
-    return {"message": "baker profile created", "baker_id": baker_id}
+    return {
+        "message": "baker profile created",
+        "baker_id": baker_id
+    }
