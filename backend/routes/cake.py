@@ -1,18 +1,19 @@
-from fastapi import FastAPI
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from models.schemas import CakeRequest
 from db.database import get_connection
+from utils.auth import get_current_user
 import json
 
 router = APIRouter()
 
 @router.post("/request")
+def create_cake(request: CakeRequest, current_user=Depends(get_current_user)):
 
-def create_cake(request: CakeRequest):
-    
+    user_id = current_user["user_id"]
+
     conn = get_connection()
     cur = conn.cursor()
-    
+
     cur.execute(
         """
         INSERT INTO cake_requests
@@ -22,7 +23,7 @@ def create_cake(request: CakeRequest):
         RETURNING id;
         """,
         (
-            request.user_id,
+            user_id,  
             request.description,
             request.image_url,
             request.input_type,
@@ -33,11 +34,14 @@ def create_cake(request: CakeRequest):
             json.dumps(request.ai_tags) if request.ai_tags else None
         )
     )
-    
+
     cake_id = cur.fetchone()[0]
-    
+
     conn.commit()
     cur.close()
     conn.close()
-    
-    return {"message": "cake request created successfully!", "cake_id": cake_id}
+
+    return {
+        "message": "cake request created successfully!",
+        "cake_id": cake_id
+    }
