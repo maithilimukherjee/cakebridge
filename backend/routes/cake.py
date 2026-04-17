@@ -2,11 +2,9 @@ from fastapi import APIRouter, Depends
 from models.schemas import CakeRequest
 from db.database import get_connection
 from utils.auth import get_current_user
-from datetime import datetime, timedelta
-import json
 from datetime import datetime, timedelta, timezone
+import json
 
-expires_at = datetime.now(timezone.utc) + timedelta(hours=4)
 router = APIRouter()
 
 @router.post("/request")
@@ -14,9 +12,11 @@ def create_cake(request: CakeRequest, current_user=Depends(get_current_user)):
 
     user_id = current_user["user_id"]
 
+    # calculate expiry INSIDE function (fresh every request)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=4)
+
     conn = get_connection()
     cur = conn.cursor()
-
 
     cur.execute(
         """
@@ -27,7 +27,7 @@ def create_cake(request: CakeRequest, current_user=Depends(get_current_user)):
         RETURNING id;
         """,
         (
-            user_id,  
+            user_id,
             request.description,
             request.image_url,
             request.input_type,
@@ -35,7 +35,8 @@ def create_cake(request: CakeRequest, current_user=Depends(get_current_user)):
             request.budget_max,
             request.event_date,
             request.delivery_city,
-            json.dumps(request.ai_tags) if request.ai_tags else None
+            json.dumps(request.ai_tags) if request.ai_tags else None,
+            expires_at  
         )
     )
 
