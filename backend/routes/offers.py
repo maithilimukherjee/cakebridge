@@ -4,7 +4,6 @@ from db.database import get_connection
 
 router = APIRouter()
 
-
 class OfferCreate(BaseModel):
     cake_id: int
     baker_id: int
@@ -43,7 +42,8 @@ def create_offer(offer: OfferCreate):
         "message": "offer submitted",
         "offer_id": offer_id
     }
-    
+
+
 @router.get("/cake/{cake_id}")
 def get_offers(cake_id: int):
     conn = get_connection()
@@ -84,6 +84,7 @@ def get_offers(cake_id: int):
 
     return {"offers": offers}
 
+
 @router.post("/select/{offer_id}")
 def select_offer(offer_id: int):
     conn = get_connection()
@@ -91,7 +92,7 @@ def select_offer(offer_id: int):
 
     # 1. get offer details
     cur.execute(
-        "SELECT cake_id, baker_id, price FROM offers WHERE id = %s",
+        "SELECT cake_id, baker_id, price, delivery_days, status FROM offers WHERE id = %s",
         (offer_id,)
     )
     offer = cur.fetchone()
@@ -99,31 +100,51 @@ def select_offer(offer_id: int):
     if not offer:
         return {"error": "offer not found"}
 
-    cake_id, baker_id, price = offer
+    cake_id, baker_id, price, delivery_days, status = offer
 
-    # 2. mark this offer as accepted
+    # 2. prevent selecting already processed offer
+    if status != "pending":
+        return {"error": "offer already processed"}
+
+    # 3. prevent duplicate order for same cake
+    cur.execute(
+        "SELECT id FROM orders WHERE cake_id = %s",
+        (cake_id,)
+    )
+    existing_order = cur.fetchone()
+
+    if existing_order:
+        return {"error": "order already exists for this cake"}
+
+    # 4. accept this offer
     cur.execute(
         "UPDATE offers SET status = 'accepted' WHERE id = %s",
         (offer_id,)
     )
 
-    # 3. reject all other offers for this cake
+    # 5. reject all other offers
     cur.execute(
         "UPDATE offers SET status = 'rejected' WHERE cake_id = %s AND id != %s",
         (cake_id, offer_id)
     )
 
-    # 4. create order
+    # 6. create order (with proper delivery date)
     cur.execute(
         """
         INSERT INTO orders (cake_id, baker_id, final_price, delivery_date)
-        VALUES (%s, %s, %s, CURRENT_DATE)
+        VALUES (%s, %s, %s, CURRENT_DATE + (%s * INTERVAL '1 day'))
         RETURNING id;
         """,
-        (cake_id, baker_id, price)
+        (cake_id, baker_id, price, delivery_days)
     )
 
     order_id = cur.fetchone()[0]
+
+    # 7. update cake request status
+    cur.execute(
+        "UPDATE cake_requests SET status = 'completed' WHERE id = %s",
+        (cake_id,)
+    )
 
     conn.commit()
     cur.close()
