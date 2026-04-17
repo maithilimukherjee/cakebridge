@@ -83,3 +83,53 @@ def get_offers(cake_id: int):
         })
 
     return {"offers": offers}
+
+@router.post("/select/{offer_id}")
+def select_offer(offer_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # 1. get offer details
+    cur.execute(
+        "SELECT cake_id, baker_id, price FROM offers WHERE id = %s",
+        (offer_id,)
+    )
+    offer = cur.fetchone()
+
+    if not offer:
+        return {"error": "offer not found"}
+
+    cake_id, baker_id, price = offer
+
+    # 2. mark this offer as accepted
+    cur.execute(
+        "UPDATE offers SET status = 'accepted' WHERE id = %s",
+        (offer_id,)
+    )
+
+    # 3. reject all other offers for this cake
+    cur.execute(
+        "UPDATE offers SET status = 'rejected' WHERE cake_id = %s AND id != %s",
+        (cake_id, offer_id)
+    )
+
+    # 4. create order
+    cur.execute(
+        """
+        INSERT INTO orders (cake_id, baker_id, final_price, delivery_date)
+        VALUES (%s, %s, %s, CURRENT_DATE)
+        RETURNING id;
+        """,
+        (cake_id, baker_id, price)
+    )
+
+    order_id = cur.fetchone()[0]
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return {
+        "message": "offer selected",
+        "order_id": order_id
+    }
