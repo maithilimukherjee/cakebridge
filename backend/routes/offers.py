@@ -43,3 +43,43 @@ def create_offer(offer: OfferCreate):
         "message": "offer submitted",
         "offer_id": offer_id
     }
+    
+@router.get("/cake/{cake_id}")
+def get_offers(cake_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT 
+            o.id,
+            o.price,
+            o.delivery_days,
+            o.message,
+            b.shop_name,
+            b.rating
+        FROM offers o
+        JOIN baker_profiles b ON o.baker_id = b.id
+        WHERE o.cake_id = %s
+        ORDER BY o.price ASC;
+        """,
+        (cake_id,)
+    )
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    offers = []
+    for row in rows:
+        offers.append({
+            "offer_id": row[0],
+            "price": row[1],
+            "delivery_days": row[2],
+            "message": row[3],
+            "baker_name": row[4],
+            "rating": row[5]
+        })
+
+    return {"offers": offers}
