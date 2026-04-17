@@ -2,8 +2,11 @@ from fastapi import APIRouter, Depends
 from models.schemas import CakeRequest
 from db.database import get_connection
 from utils.auth import get_current_user
+from datetime import datetime, timedelta
 import json
+from datetime import datetime, timedelta, timezone
 
+expires_at = datetime.now(timezone.utc) + timedelta(hours=4)
 router = APIRouter()
 
 @router.post("/request")
@@ -14,12 +17,13 @@ def create_cake(request: CakeRequest, current_user=Depends(get_current_user)):
     conn = get_connection()
     cur = conn.cursor()
 
+
     cur.execute(
         """
         INSERT INTO cake_requests
         (user_id, description, image_url, input_type,
-         budget_min, budget_max, event_date, delivery_city, ai_tags)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+         budget_min, budget_max, event_date, delivery_city, ai_tags, expires_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id;
         """,
         (

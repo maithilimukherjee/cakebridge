@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db.database import get_connection
 from utils.auth import get_current_user
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -13,11 +14,11 @@ class OfferCreate(BaseModel):
     message: str | None = None
 
 
-# 🍰 CREATE OFFER (SECURED)
+# CREATE OFFER (SECURED)
 @router.post("/create")
 def create_offer(offer: OfferCreate, current_user=Depends(get_current_user)):
 
-    # 🔐 role check
+    # only bakers allowed
     if current_user["role"] != "baker":
         raise HTTPException(status_code=403, detail="only bakers can create offers")
 
@@ -26,7 +27,7 @@ def create_offer(offer: OfferCreate, current_user=Depends(get_current_user)):
     conn = get_connection()
     cur = conn.cursor()
 
-    # 🔎 get baker_id from user_id
+    # 🔎 get baker_id
     cur.execute(
         "SELECT id FROM baker_profiles WHERE user_id = %s",
         (user_id,)
@@ -40,7 +41,26 @@ def create_offer(offer: OfferCreate, current_user=Depends(get_current_user)):
 
     baker_id = baker[0]
 
-    # 🚫 prevent duplicate offer
+    # check if request expired
+    cur.execute(
+        "SELECT expires_at FROM cake_requests WHERE id = %s",
+        (offer.cake_id,)
+    )
+    result = cur.fetchone()
+
+    if not result:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="cake request not found")
+
+    expires_at = result[0]
+
+    if datetime.now(timezone.utc) > expires_at:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="offer window expired")
+
+    # prevent duplicate offer
     cur.execute(
         "SELECT id FROM offers WHERE cake_id = %s AND baker_id = %s",
         (offer.cake_id, baker_id)
@@ -50,7 +70,7 @@ def create_offer(offer: OfferCreate, current_user=Depends(get_current_user)):
         conn.close()
         raise HTTPException(status_code=400, detail="offer already exists")
 
-    # 🧁 insert
+    # insert offer
     cur.execute(
         """
         INSERT INTO offers (cake_id, baker_id, price, delivery_days, message)
@@ -69,7 +89,7 @@ def create_offer(offer: OfferCreate, current_user=Depends(get_current_user)):
     return {"message": "offer submitted 🔥", "offer_id": offer_id}
 
 
-# 📦 GET OFFERS (optional: can keep public or restrict later)
+# GET OFFERS
 @router.get("/cake/{cake_id}")
 def get_offers(cake_id: int):
     conn = get_connection()
@@ -93,6 +113,7 @@ def get_offers(cake_id: int):
     )
 
     rows = cur.fetchall()
+
     cur.close()
     conn.close()
 
@@ -110,7 +131,7 @@ def get_offers(cake_id: int):
     return {"offers": offers}
 
 
-# 🎯 SELECT OFFER (SECURED FINAL BOSS)
+# SELECT OFFER (SECURED)
 @router.post("/select/{offer_id}")
 def select_offer(offer_id: int, current_user=Depends(get_current_user)):
 
@@ -134,7 +155,7 @@ def select_offer(offer_id: int, current_user=Depends(get_current_user)):
 
     cake_id, baker_id, price, delivery_days, status = offer
 
-    # 2. check cake ownership
+    # 2. check ownership
     cur.execute(
         "SELECT user_id FROM cake_requests WHERE id = %s",
         (cake_id,)
